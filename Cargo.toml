@@ -35,3 +35,5 @@ databake = { version = "0.1.7", features = ["derive"] }
 
 [profile.release]
 lto = "fat"
+codegen-units = 1
+strip = true
