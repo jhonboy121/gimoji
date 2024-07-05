@@ -14,12 +14,11 @@ use ratatui::layout::{Constraint, Layout};
 use selection_view::SelectionView;
 use std::{
     error::Error,
-    fs::{File, OpenOptions},
-    io::{BufRead, BufReader, Read, Write},
+    fs::{self, File, OpenOptions},
+    io::{BufRead, BufReader, ErrorKind, Read, Write},
+    path::Path,
     process::exit,
 };
-#[cfg(unix)]
-use std::{fs::Permissions, os::unix::prelude::PermissionsExt};
 
 use search_entry::SearchEntry;
 use terminal::Terminal;
@@ -176,17 +175,25 @@ fn select_emoji(colors: Colors) -> Result<Option<String>, Box<dyn Error>> {
 }
 
 fn install_hook() -> Result<(), Box<dyn Error>> {
-    let mut file = match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(HOOK_PATH)
+    fs::create_dir_all(HOOK_FOLDER)?;
+    let file_path = Path::new(HOOK_FOLDER).join(PRE_COMMIT_MSG_HOOK);
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
     {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o744);
+    }
+
+    let mut file = match options.open(&file_path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
             eprintln!(
-                "Failed to create `{HOOK_PATH}` as it already exists. \
+                "Failed to create `{}` as it already exists. \
                 Please either remove it and re-run `gimoji -i`, or \
                 add the following command line to it:\n{HOOK_CMD}",
+                file_path.display()
             );
             exit(-1);
         }
@@ -194,8 +201,6 @@ fn install_hook() -> Result<(), Box<dyn Error>> {
     };
     file.write_all(HOOK_HEADER.as_bytes())?;
     file.write_all(HOOK_CMD.as_bytes())?;
-    #[cfg(unix)]
-    file.set_permissions(Permissions::from_mode(0o744))?;
 
     Ok(())
 }
@@ -267,6 +272,7 @@ fn get_color_scheme(args: &Args) -> ColorScheme {
         })
 }
 
-const HOOK_PATH: &str = ".git/hooks/prepare-commit-msg";
+const HOOK_FOLDER: &str = ".git/hooks";
+const PRE_COMMIT_MSG_HOOK: &str = "prepare-commit-msg";
 const HOOK_HEADER: &str = "#!/usr/bin/env bash\n# gimoji as a commit hook\n";
 const HOOK_CMD: &str = "gimoji --hook \"$1\" \"$2\"";
