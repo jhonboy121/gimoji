@@ -9,20 +9,17 @@ use regex::RegexBuilder;
 use crate::colors::Colors;
 use crate::emoji::Emoji;
 
-pub struct SelectionView<'c> {
-    emojis: &'static [Emoji],
+pub struct SelectionView<'e, 'c> {
+    emojis: &'e [Emoji],
     state: TableState,
     colors: &'c Colors,
 }
 
-impl<'c> SelectionView<'c> {
-    pub fn new(emojis: &'static [Emoji], colors: &'c Colors) -> Self {
-        let mut state = TableState::default();
-        state.select(Some(0));
-
+impl<'e, 'c> SelectionView<'e, 'c> {
+    pub fn new(emojis: &'e [Emoji], colors: &'c Colors) -> Self {
         Self {
             emojis,
-            state,
+            state: TableState::default().with_selected((!emojis.is_empty()).then_some(0)),
             colors,
         }
     }
