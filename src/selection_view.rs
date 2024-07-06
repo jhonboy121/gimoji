@@ -68,19 +68,36 @@ pub struct FilteredView<'s> {
 
 impl FilteredView<'_> {
     pub fn selected(&self) -> Option<&Emoji> {
-        self.emojis.get(self.state.selected().unwrap()).copied()
+        self.state
+            .selected()
+            .and_then(|idx| self.emojis.get(idx))
+            .copied()
     }
 
     pub fn move_up(&mut self) {
-        let i = self.state.selected().unwrap();
-        let i = if i == 0 { self.emojis.len() - 1 } else { i - 1 };
-        self.state.select(Some(i));
+        let Some(idx) = self.state.selected_mut() else {
+            return;
+        };
+
+        if *idx > 0 {
+            *idx -= 1;
+        } else if *idx == 0 {
+            // At this point emojis is guaranteed to be not empty
+            *idx = self.emojis.len() - 1;
+        }
     }
 
     pub fn move_down(&mut self) {
-        let i = self.state.selected().unwrap();
-        let i = if i == self.emojis.len() - 1 { 0 } else { i + 1 };
-        self.state.select(Some(i));
+        let Some(idx) = self.state.selected_mut() else {
+            return;
+        };
+
+        // At this point emojis is guaranteed to be not empty
+        if *idx == self.emojis.len() - 1 {
+            *idx = 0;
+        } else {
+            *idx += 1;
+        }
     }
 }
 
