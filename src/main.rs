@@ -9,19 +9,14 @@ mod terminal;
 use arboard::Clipboard;
 use clap::{command, Parser, ValueEnum};
 use colors::Colors;
-use crossterm::event::{read, Event, KeyCode, KeyModifiers};
-use ratatui::layout::{Constraint, Layout};
-use selection_view::SelectionView;
 use std::{
     error::Error,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, ErrorKind, Read, Write},
+    io::{self, BufRead, BufReader, ErrorKind, Read, Write},
     path::Path,
     process::exit,
 };
-
-use search_entry::SearchEntry;
-use terminal::Terminal;
+use terminal::{EventResponse, Terminal};
 
 /// Select emoji for git commit message.
 #[derive(Parser, Debug)]
@@ -94,9 +89,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let color_scheme = get_color_scheme(&args);
-    let selected = match select_emoji(color_scheme.into())? {
-        Some(s) => s,
-        None => return Ok(()),
+
+    let Some(selected) = select_emoji(color_scheme.into())? else {
+        return Ok(());
     };
 
     if let Some(path) = commit_file_path {
@@ -115,66 +110,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn select_emoji(colors: Colors) -> Result<Option<String>, Box<dyn Error>> {
-    let emojis = &emoji::EMOJIS;
-
-    let mut terminal = Terminal::setup()?;
-    let mut search_entry = SearchEntry::new(&colors);
-    let mut selection_view = SelectionView::new(emojis, &colors);
-
-    let selected = loop {
-        let search_text = search_entry.text();
-        let mut filtered_view = selection_view.filtered_view(search_text);
-
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .constraints([Constraint::Min(5), Constraint::Percentage(100)].as_ref())
-                .margin(1)
-                .split(f.size());
-
-            // The search entry goes at the top.
-            f.render_widget(&search_entry, chunks[0]);
-
-            // The emoji list.
-            f.render_widget(&mut filtered_view, chunks[1]);
-        })?;
-
-        if let Event::Key(event) = read()? {
-            match event.code {
-                KeyCode::Enter => {
-                    if let Some(emoji) = filtered_view.selected() {
-                        break Some(emoji.emoji().to_string());
-                    }
-                }
-                KeyCode::Esc => {
-                    if search_text.is_empty() {
-                        break None;
-                    } else {
-                        search_entry.clear();
-                    }
-                }
-                KeyCode::Down => filtered_view.move_down(),
-                KeyCode::Up => filtered_view.move_up(),
-                KeyCode::Char(c) => {
-                    if c == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
-                        let _ = terminal.cleanup();
-                        exit(130);
-                    } else {
-                        search_entry.push(c)
-                    }
-                }
-                KeyCode::Backspace => {
-                    search_entry.pop();
-                }
-                _ => {}
-            }
+fn select_emoji(colors: Colors) -> io::Result<Option<String>> {
+    let mut terminal = Terminal::new(colors)?;
+    loop {
+        let response = terminal.render_ui()?;
+        match response {
+            EventResponse::Noop => {}
+            EventResponse::EmojiSelected(emoji) => return terminal.reset().map(|()| Some(emoji)),
+            EventResponse::Exit => return terminal.reset().map(|()| None),
         }
-    };
-
-    Ok(selected)
+    }
 }
 
-fn install_hook() -> Result<(), Box<dyn Error>> {
+fn install_hook() -> io::Result<()> {
     fs::create_dir_all(HOOK_FOLDER)?;
     let file_path = Path::new(HOOK_FOLDER).join(PRE_COMMIT_MSG_HOOK);
 

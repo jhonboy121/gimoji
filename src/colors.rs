@@ -1,5 +1,6 @@
 use ratatui::style::Color;
 
+#[derive(Clone, Copy)]
 pub struct Colors {
     pub selected: Color,
     pub unselected: Color,

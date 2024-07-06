@@ -5,39 +5,39 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
 
-pub struct SearchEntry<'c> {
-    text: String,
-    colors: &'c Colors,
+pub struct SearchEntry {
+    buf: String,
+    colors: Colors,
 }
 
-impl<'c> SearchEntry<'c> {
-    pub fn new(colors: &'c Colors) -> Self {
+impl SearchEntry {
+    pub fn new(colors: Colors) -> Self {
         Self {
-            text: String::new(),
+            buf: String::new(),
             colors,
         }
     }
 
     pub fn text(&self) -> &str {
-        &self.text
+        &self.buf
     }
 
     pub fn push(&mut self, c: char) {
-        self.text.push(c);
+        self.buf.push(c);
     }
 
     pub fn pop(&mut self) {
-        self.text.pop();
+        self.buf.pop();
     }
 
     pub fn clear(&mut self) {
-        self.text.clear();
+        self.buf.clear();
     }
 }
 
-impl Widget for &SearchEntry<'_> {
+impl Widget for &SearchEntry {
     fn render(self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
-        let (text, style) = if self.text.is_empty() {
+        let (text, style) = if self.buf.is_empty() {
             (DEFAULT_TEXT, Style::default().add_modifier(Modifier::DIM))
         } else {
             (self.text(), Style::default())

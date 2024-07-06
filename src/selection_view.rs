@@ -6,20 +6,20 @@ use ratatui::{
 };
 use regex::RegexBuilder;
 
-use crate::colors::Colors;
-use crate::emoji::Emoji;
+use crate::{
+    colors::Colors,
+    emoji::{Emoji, EMOJIS},
+};
 
-pub struct SelectionView<'e, 'c> {
-    emojis: &'e [Emoji],
+pub struct SelectionView {
     state: TableState,
-    colors: &'c Colors,
+    colors: Colors,
 }
 
-impl<'e, 'c> SelectionView<'e, 'c> {
-    pub fn new(emojis: &'e [Emoji], colors: &'c Colors) -> Self {
+impl SelectionView {
+    pub fn new(colors: Colors) -> Self {
         Self {
-            emojis,
-            state: TableState::default().with_selected((!emojis.is_empty()).then_some(0)),
+            state: TableState::default().with_selected((!EMOJIS.is_empty()).then_some(0)),
             colors,
         }
     }
@@ -30,8 +30,7 @@ impl<'e, 'c> SelectionView<'e, 'c> {
             .build()
             .expect("Invalid characters in search text");
 
-        let emojis: Box<[&Emoji]> = self
-            .emojis
+        let emojis: Box<[&Emoji]> = EMOJIS
             .iter()
             .filter(|emoji| emoji.contains(&pattern))
             .collect();
@@ -63,7 +62,7 @@ impl<'e, 'c> SelectionView<'e, 'c> {
 pub struct FilteredView<'s> {
     emojis: Box<[&'s Emoji]>,
     state: &'s mut TableState,
-    colors: &'s Colors,
+    colors: Colors,
 }
 
 impl FilteredView<'_> {
