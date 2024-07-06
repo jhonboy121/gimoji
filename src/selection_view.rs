@@ -24,19 +24,32 @@ impl<'e, 'c> SelectionView<'e, 'c> {
         }
     }
 
-    pub fn filtered_view(&mut self, search_text: &str) -> FilteredView<'_, '_> {
+    pub fn filtered_view(&mut self, search_text: &str) -> FilteredView {
         let pattern = RegexBuilder::new(search_text)
             .case_insensitive(true)
             .build()
-            .expect("invalid characters in search text");
-        let emojis: Vec<&Emoji> = self
+            .expect("Invalid characters in search text");
+
+        let emojis: Box<[&Emoji]> = self
             .emojis
             .iter()
-            .filter(|emoji| search_text.is_empty() || emoji.contains(&pattern))
+            .filter(|emoji| emoji.contains(&pattern))
             .collect();
-        if self.state.selected().unwrap() >= emojis.len() {
-            // Reset the selection if the list goes shorter than the selected index.
-            self.state.select(Some(0));
+
+        match self.state.selected() {
+            Some(idx) => {
+                // Reset the selection if the list goes shorter than the selected index.
+                if emojis.is_empty() {
+                    self.state.select(None);
+                } else if idx >= emojis.len() {
+                    self.state.select(Some(0));
+                }
+            }
+            None => {
+                if !emojis.is_empty() {
+                    self.state.select(Some(0))
+                }
+            }
         }
 
         FilteredView {
@@ -47,13 +60,13 @@ impl<'e, 'c> SelectionView<'e, 'c> {
     }
 }
 
-pub struct FilteredView<'s, 'c> {
-    emojis: Vec<&'s Emoji>,
+pub struct FilteredView<'s> {
+    emojis: Box<[&'s Emoji]>,
     state: &'s mut TableState,
-    colors: &'c Colors,
+    colors: &'s Colors,
 }
 
-impl FilteredView<'_, '_> {
+impl FilteredView<'_> {
     pub fn selected(&self) -> Option<&Emoji> {
         self.emojis.get(self.state.selected().unwrap()).copied()
     }
@@ -71,7 +84,7 @@ impl FilteredView<'_, '_> {
     }
 }
 
-impl Widget for &mut FilteredView<'_, '_> {
+impl Widget for &mut FilteredView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let emojis = self
             .emojis
