@@ -103,37 +103,36 @@ impl FilteredView<'_> {
 
 impl Widget for &mut FilteredView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let emojis = self
+        let rows = self
             .emojis
             .iter()
-            .map(|emoji| Row::new(vec![emoji.emoji(), emoji.code(), emoji.description()]));
-        let table = Table::new(
-            emojis,
-            [
-                Constraint::Percentage(3),
-                Constraint::Percentage(12),
-                Constraint::Percentage(85),
-            ],
-        )
-        .block(
-            Block::default()
-                .title("Select an emoji")
-                .borders(Borders::ALL)
-                .padding(Padding {
-                    left: 1,
-                    right: 1,
-                    top: 1,
-                    bottom: 0,
-                }),
-        )
-        .style(Style::default().fg(self.colors.unselected))
-        .highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .fg(self.colors.selected),
-        )
-        .highlight_symbol("❯ ")
-        .column_spacing(2);
+            .map(|emoji| Row::new([emoji.emoji(), emoji.code(), emoji.description()]));
+
+        let widths = [
+            Constraint::Percentage(3),
+            Constraint::Percentage(12),
+            Constraint::Percentage(85),
+        ];
+
+        let table = Table::new(rows, widths)
+            .block(
+                Block::default()
+                    .title(BLOCK_TITLE)
+                    .borders(Borders::ALL)
+                    .padding(Padding::new(1, 1, 1, 0)),
+            )
+            .style(Style::default().fg(self.colors.unselected))
+            .highlight_style(
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(self.colors.selected),
+            )
+            .highlight_symbol(HIGHLIGHT_SYMBOL)
+            .column_spacing(2);
+
         StatefulWidget::render(table, area, buf, self.state);
     }
 }
+
+const BLOCK_TITLE: &str = "Select an emoji";
+const HIGHLIGHT_SYMBOL: &str = "> ";
