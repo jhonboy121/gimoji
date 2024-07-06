@@ -51,8 +51,8 @@ enum ColorScheme {
 impl From<ColorScheme> for Colors {
     fn from(c: ColorScheme) -> Self {
         match c {
-            ColorScheme::Dark => Colors::dark(),
-            ColorScheme::Light => Colors::light(),
+            ColorScheme::Dark => Colors::DARK,
+            ColorScheme::Light => Colors::LIGHT,
         }
     }
 }
