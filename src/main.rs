@@ -150,7 +150,7 @@ fn select_emoji(colors: Colors) -> Result<Option<String>, Box<dyn Error>> {
                     if search_text.is_empty() {
                         break None;
                     } else {
-                        search_entry.delete_all();
+                        search_entry.clear();
                     }
                 }
                 KeyCode::Down => filtered_view.move_down(),
@@ -160,11 +160,11 @@ fn select_emoji(colors: Colors) -> Result<Option<String>, Box<dyn Error>> {
                         let _ = terminal.cleanup();
                         exit(130);
                     } else {
-                        search_entry.append(c)
+                        search_entry.push(c)
                     }
                 }
                 KeyCode::Backspace => {
-                    search_entry.delete_last();
+                    search_entry.pop();
                 }
                 _ => {}
             }
