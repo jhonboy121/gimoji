@@ -105,7 +105,7 @@ impl Widget for &mut FilteredView<'_> {
         let rows = self
             .emojis
             .iter()
-            .map(|emoji| Row::new([emoji.emoji(), emoji.code(), emoji.description()]));
+            .map(|emoji| Row::new([emoji.emoji, emoji.code, emoji.description]));
 
         let widths = [
             Constraint::Percentage(3),

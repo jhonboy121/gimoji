@@ -1,4 +1,3 @@
-# Contributing to gitmoji
 
 We welcomes contribution from everyone in the form of suggestions, bug reports, pull requests, and
 feedback. This document gives some guidance if you are thinking of helping us.

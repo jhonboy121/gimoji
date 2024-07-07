@@ -6,13 +6,14 @@ mod search_entry;
 mod selection_view;
 mod terminal;
 
+use anyhow::Context;
 use arboard::Clipboard;
 use clap::{command, Parser, ValueEnum};
 use colors::Colors;
 use std::{
-    error::Error,
-    fs::{self, File, OpenOptions},
-    io::{self, BufRead, BufReader, ErrorKind, Read, Write},
+    fmt::Debug,
+    fs::{self, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write},
     path::Path,
     process::exit,
 };
@@ -52,65 +53,30 @@ impl From<ColorScheme> for Colors {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     if args.init {
-        install_hook()?;
-
-        return Ok(());
+        return install_hook();
     }
 
-    let (commit_file_path, commit_file_content) = if !args.hook.is_empty() {
-        let path = &args.hook[0];
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
-        let mut content = String::new();
-        reader.read_line(&mut content)?;
-        let content = if !content.is_empty() {
-            // FIXME: There has to be a faster way to detect an emoji.
-            for emoji in emoji::EMOJIS {
-                if content.contains(emoji.emoji()) || content.contains(emoji.code()) {
-                    // The commit shortlog already contains an emoji.
-                    return Ok(());
-                }
-            }
+    let get_emoji = || {
+        let colors = Colors::from(get_color_scheme(args.color_scheme));
+        select_emoji(colors)
+    };
 
-            // Load the rest of the file.
-            reader.read_to_string(&mut content)?;
-            Some(content)
-        } else {
-            None
+    if args.hook.is_empty() {
+        let Some(emoji) = get_emoji()? else {
+            return Ok(());
         };
-
-        (Some(path), content)
+        println!("Copied {emoji} to the clipboard");
+        copy_to_clipboard(emoji)
     } else {
-        (None, None)
-    };
-
-    let color_scheme = get_color_scheme(&args);
-
-    let Some(selected) = select_emoji(color_scheme.into())? else {
-        return Ok(());
-    };
-
-    if let Some(path) = commit_file_path {
-        // Just prepend the emoji to the file.
-        let mut file = File::create(path)?;
-        let prefix = format!("{} ", selected);
-        file.write_all(prefix.as_bytes())?;
-        if let Some(content) = commit_file_content {
-            file.write_all(content.as_bytes())?;
-        }
-    } else {
-        println!("Copied {selected} to the clipboard");
-        copy_to_clipboard(selected)?;
+        prepend_emoji(&args.hook[0], get_emoji)
     }
-
-    Ok(())
 }
 
-fn select_emoji(colors: Colors) -> io::Result<Option<String>> {
+fn select_emoji(colors: Colors) -> anyhow::Result<Option<&'static str>> {
     let mut terminal = Terminal::new(colors)?;
     loop {
         let response = terminal.render_ui()?;
@@ -122,8 +88,8 @@ fn select_emoji(colors: Colors) -> io::Result<Option<String>> {
     }
 }
 
-fn install_hook() -> io::Result<()> {
-    fs::create_dir_all(HOOK_FOLDER)?;
+fn install_hook() -> anyhow::Result<()> {
+    fs::create_dir_all(HOOK_FOLDER).context("Failed to create hooks dir")?;
     let file_path = Path::new(HOOK_FOLDER).join(PRE_COMMIT_MSG_HOOK);
 
     let mut options = OpenOptions::new();
@@ -134,7 +100,7 @@ fn install_hook() -> io::Result<()> {
         options.mode(0o744);
     }
 
-    let mut file = match options.open(&file_path) {
+    let file = match options.open(&file_path) {
         Ok(f) => f,
         Err(e) if e.kind() == ErrorKind::AlreadyExists => {
             eprintln!(
@@ -145,12 +111,17 @@ fn install_hook() -> io::Result<()> {
             );
             exit(-1);
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(anyhow::anyhow!(e)).context("Failed to create hook file"),
     };
-    file.write_all(HOOK_HEADER.as_bytes())?;
-    file.write_all(HOOK_CMD.as_bytes())?;
 
-    Ok(())
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(HOOK_HEADER.as_bytes())
+        .context("Failed to write hook header")?;
+    writer
+        .write_all(HOOK_CMD.as_bytes())
+        .context("Failed to write hook command")?;
+    writer.flush().context("Failed to flush hook buffer")
 }
 
 /// Copy the text to the clipboard.
@@ -161,40 +132,46 @@ fn install_hook() -> io::Result<()> {
 ///
 /// Note that it is possible to make it work without exiting the process, but it would require an
 /// `unsafe { fork() }`. However, in this program this is simply not needed.
-fn copy_to_clipboard(s: String) -> Result<(), Box<dyn Error>> {
-    #[cfg(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "illumos",
-        target_os = "linux",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_os = "solaris"
-    ))]
-    {
-        use arboard::SetExtLinux;
-        nix::unistd::daemon(false, false)?;
-        Clipboard::new()?.set().wait().text(s)?;
+fn copy_to_clipboard(emoji: &str) -> anyhow::Result<()> {
+    macro_rules! clipboard {
+        () => {
+            Clipboard::new()
+                .context("Failed to create clipboard instance")?
+                .set()
+        };
     }
 
-    #[cfg(not(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "illumos",
-        target_os = "linux",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_os = "solaris"
-    )))]
-    {
-        Clipboard::new()?.set().text(s)?;
+    macro_rules! paste_text {
+        ($set:expr) => {
+            $set.text(emoji)
+                .context("Failed to copy emoji to clipboard")?
+        };
+    }
+
+    cfg_if::cfg_if! {
+        if #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "illumos",
+            target_os = "linux",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "solaris"
+        ))]
+        {
+            use arboard::SetExtLinux;
+            nix::unistd::daemon(false, false).context("Failed to daemonize process")?;
+            paste_text!(clipboard!().wait())
+        } else {
+            paste_text!(clipboard!())
+        }
     }
 
     exit(0)
 }
 
 // Color scheme selection. Precedence: env, arg, detection, default.
-fn get_color_scheme(args: &Args) -> ColorScheme {
+fn get_color_scheme(color_scheme_arg: Option<ColorScheme>) -> ColorScheme {
     std::env::var("GIMOJI_COLOR_SCHEME")
         .ok()
         .and_then(|s| match s.as_str() {
@@ -202,7 +179,7 @@ fn get_color_scheme(args: &Args) -> ColorScheme {
             "dark" => Some(ColorScheme::Dark),
             _ => None,
         })
-        .or(args.color_scheme)
+        .or(color_scheme_arg)
         .unwrap_or_else(|| {
             terminal_light::luma()
                 .map(|l| {
@@ -218,6 +195,59 @@ fn get_color_scheme(args: &Args) -> ColorScheme {
                     ColorScheme::Dark
                 })
         })
+}
+
+fn prepend_emoji(
+    path: &str,
+    get_emoji: impl FnOnce() -> anyhow::Result<Option<&'static str>>,
+) -> anyhow::Result<()> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .context("Failed to open commit msg file in r/w mode")?;
+
+    let file_size = file
+        .metadata()
+        .context("Failed to get commit msg file metadata")?
+        .len() as usize;
+
+    let mut reader = BufReader::new(file);
+    let mut content = String::new();
+    reader
+        .read_line(&mut content)
+        .context("Failed to read first line in commit msg file")?;
+
+    if !content.is_empty() {
+        // FIXME: There has to be a faster way to detect an emoji.
+        for emoji in emoji::EMOJIS {
+            if content.contains(emoji.emoji) || content.contains(emoji.code) {
+                // The commit shortlog already contains an emoji.
+                return Ok(());
+            }
+        }
+    }
+
+    let Some(emoji) = get_emoji()? else {
+        return Ok(());
+    };
+
+    let mut content = content.into_bytes();
+    content.reserve(file_size - content.len());
+    reader
+        .read_to_end(&mut content)
+        .context("Failed to read rest of the commit msg file")?;
+    reader
+        .seek(SeekFrom::Start(0))
+        .context("Failed to seek to start of commit msg file")?;
+
+    let mut writer = BufWriter::new(reader.into_inner());
+    write!(&mut writer, "{emoji} ").context("Failed to write emoji to buffer")?;
+    writer
+        .write_all(&content)
+        .context("Failed to write commit message to buffer")?;
+    writer.flush().context("Failed to flush commit msg buffer")
 }
 
 const HOOK_FOLDER: &str = ".git/hooks";

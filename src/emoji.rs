@@ -2,11 +2,11 @@ use regex::Regex;
 
 #[derive(Debug)]
 pub struct Emoji {
-    code: &'static str,
-    description: &'static str,
-    emoji: &'static str,
-    entity: &'static str,
-    name: &'static str,
+    pub code: &'static str,
+    pub description: &'static str,
+    pub emoji: &'static str,
+    pub entity: &'static str,
+    pub name: &'static str,
 }
 
 impl Emoji {
@@ -16,18 +16,6 @@ impl Emoji {
             || pattern.is_match(self.emoji)
             || pattern.is_match(self.entity)
             || pattern.is_match(self.name)
-    }
-
-    pub fn code(&self) -> &str {
-        self.code
-    }
-
-    pub fn description(&self) -> &str {
-        self.description
-    }
-
-    pub fn emoji(&self) -> &str {
-        self.emoji
     }
 }
 
