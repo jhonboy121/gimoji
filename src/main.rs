@@ -6,16 +6,16 @@ mod search_entry;
 mod selection_view;
 mod terminal;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use arboard::Clipboard;
-use clap::{command, Parser, ValueEnum};
+use clap::{command, Parser, Subcommand, ValueEnum};
 use colors::Colors;
 use std::{
     fmt::Debug,
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write},
-    path::Path,
-    process::exit,
+    path::{Path, PathBuf},
+    process,
 };
 use terminal::{EventResponse, Terminal};
 
@@ -23,19 +23,37 @@ use terminal::{EventResponse, Terminal};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    cmd: Command,
+}
+
+#[derive(Debug, Subcommand)]
+enum Command {
     /// Initialize gimoji as a commit message (`prepare-commit-msg`) hook.
-    #[arg(short, long)]
-    init: bool,
+    Init,
+    /// Select and copy an emoji to clipboard.
+    Copy {
+        #[arg(long)]
+        color_scheme: Option<ColorScheme>,
+    },
+    /// Run as git hook
+    Hook {
+        #[arg()]
+        msg_file: PathBuf,
+        #[arg()]
+        msg_source: Option<MessageSource>,
+        #[arg(long)]
+        color_scheme: Option<ColorScheme>,
+    },
+}
 
-    /// Run as git commit hook.
-    #[arg(long, value_delimiter = ' ', num_args = 1..3)]
-    hook: Vec<String>,
-
-    /// The color scheme to use (`GIMOJI_COLOR_SCHEME` environment variable takes precedence).
-    ///
-    /// If not specified, the color scheme is autodetected.
-    #[arg(short, long)]
-    color_scheme: Option<ColorScheme>,
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum MessageSource {
+    Message,
+    Template,
+    Merge,
+    Squash,
+    Commit,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -56,23 +74,37 @@ impl From<ColorScheme> for Colors {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    if args.init {
-        return install_hook();
-    }
-
-    let get_emoji = || {
-        let colors = Colors::from(get_color_scheme(args.color_scheme));
-        select_emoji(colors)
+    let get_emoji_factory = |color_scheme| {
+        move || {
+            let colors = Colors::from(get_color_scheme(color_scheme));
+            select_emoji(colors)
+        }
     };
 
-    if args.hook.is_empty() {
-        let Some(emoji) = get_emoji()? else {
-            return Ok(());
-        };
-        println!("Copied {emoji} to the clipboard");
-        copy_to_clipboard(emoji)
-    } else {
-        prepend_emoji(&args.hook[0], get_emoji)
+    match args.cmd {
+        Command::Init => install_hook(),
+        Command::Copy { color_scheme } => {
+            let Some(emoji) = get_emoji_factory(color_scheme)()? else {
+                return Ok(());
+            };
+            println!("Copied {emoji} to the clipboard");
+            copy_to_clipboard(emoji)
+        }
+        Command::Hook {
+            msg_file,
+            msg_source,
+            color_scheme,
+        } => {
+            match msg_source {
+                None | Some(MessageSource::Message | MessageSource::Merge) => {
+                    prepend_emoji(&msg_file, get_emoji_factory(color_scheme))
+                }
+                Some(MessageSource::Template | MessageSource::Squash | MessageSource::Commit) => {
+                    // We do not support any operations for these message types
+                    Ok(())
+                }
+            }
+        }
     }
 }
 
@@ -103,13 +135,12 @@ fn install_hook() -> anyhow::Result<()> {
     let file = match options.open(&file_path) {
         Ok(f) => f,
         Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-            eprintln!(
+            bail!(
                 "Failed to create `{}` as it already exists. \
                 Please either remove it and re-run `gimoji -i`, or \
                 add the following command line to it:\n{HOOK_CMD}",
                 file_path.display()
-            );
-            exit(-1);
+            )
         }
         Err(e) => return Err(anyhow::anyhow!(e)).context("Failed to create hook file"),
     };
@@ -121,7 +152,9 @@ fn install_hook() -> anyhow::Result<()> {
     writer
         .write_all(HOOK_CMD.as_bytes())
         .context("Failed to write hook command")?;
-    writer.flush().context("Failed to flush hook buffer")
+    writer.flush().context("Failed to flush hook buffer")?;
+
+    Ok(println!("Hooked gimoji with git successfully!"))
 }
 
 /// Copy the text to the clipboard.
@@ -167,7 +200,7 @@ fn copy_to_clipboard(emoji: &str) -> anyhow::Result<()> {
         }
     }
 
-    exit(0)
+    process::exit(0)
 }
 
 // Color scheme selection. Precedence: env, arg, detection, default.
@@ -198,7 +231,7 @@ fn get_color_scheme(color_scheme_arg: Option<ColorScheme>) -> ColorScheme {
 }
 
 fn prepend_emoji(
-    path: &str,
+    path: &Path,
     get_emoji: impl FnOnce() -> anyhow::Result<Option<&'static str>>,
 ) -> anyhow::Result<()> {
     let file = OpenOptions::new()
@@ -253,4 +286,4 @@ fn prepend_emoji(
 const HOOK_FOLDER: &str = ".git/hooks";
 const PRE_COMMIT_MSG_HOOK: &str = "prepare-commit-msg";
 const HOOK_HEADER: &str = "#!/usr/bin/env bash\n# gimoji as a commit hook\n";
-const HOOK_CMD: &str = "gimoji --hook \"$1\" \"$2\"";
+const HOOK_CMD: &str = r#"gimoji hook "$1" "$2""#;
