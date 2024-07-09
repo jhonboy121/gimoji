@@ -238,6 +238,7 @@ fn prepend_emoji(
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(path)
         .context("Failed to open commit msg file in r/w mode")?;
 

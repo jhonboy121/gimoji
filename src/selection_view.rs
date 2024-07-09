@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Rect},
@@ -19,7 +21,7 @@ pub struct SelectionView {
 impl SelectionView {
     pub fn new(colors: Colors) -> Self {
         Self {
-            state: TableState::default().with_selected((!EMOJIS.is_empty()).then_some(0)),
+            state: TableState::default().with_selected(Some(0)),
             colors,
         }
     }
@@ -78,11 +80,13 @@ impl FilteredView<'_> {
             return;
         };
 
-        if *idx > 0 {
-            *idx -= 1;
-        } else if *idx == 0 {
-            // At this point emojis is guaranteed to be not empty
-            *idx = self.emojis.len() - 1;
+        match (*idx).cmp(&0) {
+            Ordering::Less => unreachable!(),
+            Ordering::Equal => {
+                // At this point emojis is guaranteed to be not empty
+                *idx = self.emojis.len() - 1;
+            }
+            Ordering::Greater => *idx -= 1,
         }
     }
 
