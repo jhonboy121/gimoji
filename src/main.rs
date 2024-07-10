@@ -287,4 +287,4 @@ fn prepend_emoji(
 const HOOK_FOLDER: &str = ".git/hooks";
 const PRE_COMMIT_MSG_HOOK: &str = "prepare-commit-msg";
 const HOOK_HEADER: &str = "#!/usr/bin/env bash\n# gimoji as a commit hook\n";
-const HOOK_CMD: &str = r#"gimoji hook "$1" "$2""#;
+const HOOK_CMD: &str = r#"gimoji hook $1 $2"#;
