@@ -93,11 +93,11 @@ impl Terminal {
                     EventResponse::Noop
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Tab => {
                 filtered_view.move_down();
                 EventResponse::Noop
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::BackTab => {
                 filtered_view.move_up();
                 EventResponse::Noop
             }
