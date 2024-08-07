@@ -30,7 +30,11 @@ struct Args {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Initialize gimoji as a commit message (`prepare-commit-msg`) hook.
-    Init,
+    Init {
+        /// Force initialize hook, use with caution
+        #[arg(short, long)]
+        force: bool,
+    },
     /// Select and copy an emoji to clipboard.
     Copy {
         #[arg(long)]
@@ -82,7 +86,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     match args.cmd {
-        Command::Init => install_hook(),
+        Command::Init { force } => install_hook(force),
         Command::Copy { color_scheme } => {
             let Some(emoji) = get_emoji_factory(color_scheme)()? else {
                 return Ok(());
@@ -120,12 +124,12 @@ fn select_emoji(colors: Colors) -> anyhow::Result<Option<&'static str>> {
     }
 }
 
-fn install_hook() -> anyhow::Result<()> {
+fn install_hook(force: bool) -> anyhow::Result<()> {
     fs::create_dir_all(HOOK_FOLDER).context("Failed to create hooks dir")?;
     let file_path = Path::new(HOOK_FOLDER).join(PRE_COMMIT_MSG_HOOK);
 
     let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
+    options.write(true).create(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -134,11 +138,9 @@ fn install_hook() -> anyhow::Result<()> {
 
     let file = match options.open(&file_path) {
         Ok(f) => f,
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+        Err(e) if e.kind() == ErrorKind::AlreadyExists && !force => {
             bail!(
-                "Failed to create `{}` as it already exists. \
-                Please either remove it and re-run `gimoji -i`, or \
-                add the following command line to it:\n{HOOK_CMD}",
+                "Failed to create `{}` as it already exists. Use -f to force overwrite it.",
                 file_path.display()
             )
         }
